@@ -1,0 +1,262 @@
+#include "DHT.h"
+#define DHTPIN 5
+#define DHTTYPE DHT22
+
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+
+//ANALOGICOS
+int higrometro=A1;//pin al que va conectado el higrometro
+const int LDRPin=A2;//pin al que va conectado el LDR
+
+//DIGITALES
+const int sensorPIR=7;//pin al que va conectado el sensor PIR
+int outPIR =8;//pin de salida para controlar la alarma
+int outDHT=9;//pin de salida para controlar el motor
+int outHigrometro=10;//pin de salida para controlar la regadera
+int outLDR=11;//pin de salida para controlar la luz
+int botonInc=2;//pulsador para incrementar
+int botonDes=3;//pulsador para decrementar
+int botonMod=4;//pulsador para entrar en estado de modificacion
+
+//LIMITES
+int limMaxDHT=80;//variable que almacena el limite maximo de temperatura
+int limMinDHT=10;//variable que almacena el limite minimo de temperatura
+int limLDR=500;//variable que almacena el limite al que se enciende la luz
+int limMaxHumedad=100;//variable que almacena el limite maximo de humedad
+int limMinHumedad=0;//variable que almacena el limite minimo de humedad
+
+//VARIABLES
+float tempC; //Variable para almacenar la temperatura en Celsius
+int estado=0;//variable que almacena el estado en el que se encuentra el sistema
+int tempMax=30;//variable que almacena la maxima temperatura a leer
+int tempMin=20;//variable que almacena la minima temperatura a leer
+int humMax=80;//variable que almacena la maxima humedad a leer
+int humMin=20;//variable que almacena la minima humedad a leer
+int estAlarm=0;//variable que almacena el estado de la alarma
+int estMotor=0;//variable que almacena el estado del motor
+
+DHT dht(DHTPIN, DHTTYPE);//Crea el objeto para controlar el sensor DHT
+LiquidCrystal_I2C lcd(0x27,20,4);//Crea el objeto para controlar el
+LCD16x2 por I2C
+
+void setup() {
+dht.begin();
+pinMode (sensorPIR , INPUT);
+pinMode (outPIR, OUTPUT);
+pinMode(higrometro, INPUT);
+pinMode(LDRPin, INPUT);
+
+digitalWrite(outPIR, LOW);//Nos aseguramos que la alarma este apagada al inicio
+lcd.init();
+lcd.backlight();
+lcd.setCursor(3, 0);
+lcd.print("BIENVENIDO");
+lcd.setCursor(3, 1);
+lcd.print("Curso");
+delay(2000);
+}
+
+void loop() {
+
+if (digitalRead(sensorPIR) && estAlarm==1){//Si la alarma esta activa y detecta movimiento, se encendera
+digitalWrite(outPIR, HIGH);
+}
+
+tempC = dht.readTemperature();//Se lee la temperatura con el sensor DHT
+if(tempC > tempMax){//Si la temperadura es mayor que la temperatura maxima el ventilador se encendera
+digitalWrite(outDHT,HIGH);
+}else if(tempC<tempMin){//Si la temperatura es menor que la temperatura minima el ventilador se apagara
+digitalWrite(outDHT,LOW);
+}
+
+int valorHumedad = map(analogRead(higrometro), 0, 1023, 100, 0);//Se lee la humedad con el higrometro
+if(valorHumedad > humMax && estMotor==1){//Si la humedad es mayor que la humedad maxima y el motor esta activo, el motor se apagara
+digitalWrite(outHigrometro,LOW);
+}else if(valorHumedad <humMin && estMotor==1){//Si la humedad es menor que la humedad minima y el motor esta activo, el motor se encendera
+digitalWrite(outHigrometro,HIGH);
+}else if(estMotor==0){//Si el motor esta inactivo, el motor se apagara
+digitalWrite(outHigrometro,LOW);
+}
+
+int input = analogRead(LDRPin);//Se lee el sensor de luz
+if (input > limLDR) {//Si la cantidad de luz es mayor que el limite del LDR, el foco se apagara
+digitalWrite(outLDR, LOW);
+}else {//Si la cantidad de luz es menor que el limite del LDR, el foco se encendera
+digitalWrite(outLDR, HIGH);
+}
+if(estado==0){//En el estado 0 del sistema se muestra el estado de lossensores
+
+lcd.clear();
+lcd.setCursor(0,0);
+lcd.print("T:");
+lcd.print(tempC,1);
+lcd.print("*C");
+lcd.setCursor(9,0);
+lcd.print("ALA:");
+if(estAlarm==0){
+lcd.print("OFF");
+}else if(estAlarm==1){
+lcd.print("ON");
+}
+lcd.setCursor(0,1);
+lcd.print("HUM:");
+lcd.print(valorHumedad);
+lcd.print(" %");
+lcd.setCursor(9,1);
+lcd.print("MOT:");
+if(estMotor==0){
+lcd.print("OFF");
+}else if(estMotor==1){
+lcd.print("ON");
+}
+}else if(estado==1){//El estado 1 del sistema permite modificar la
+temperatura minima de lectura
+do{
+lcd.clear();
+if(digitalRead(botonInc)){//Se lee el boton de incremento para
+incrementar la temperatura minima
+tempMin=tempMin+5;
+if(tempMin>tempMax){
+tempMin=limMinDHT;
+}
+}else if(digitalRead(botonDes)){//Se lee el boton de decremento para decrementar la temperatura minima
+tempMin=tempMin-5;
+if(tempMin<limMinDHT){
+tempMin=tempMax;
+}
+}
+lcd.setCursor(0,0);
+lcd.print("Temperatura Min:");
+lcd.setCursor(0,1);
+lcd.print(tempMin);
+lcd.print("*C");
+delay(100);
+}while(!digitalRead(botonMod));
+}else if(estado==2){//El estado 2 del sistema permite modificar la temperatura, maxima de lectura
+do{
+lcd.clear();
+if(digitalRead(botonInc)){//Se lee el boton de incremento para incrementar la temperatura maxima
+tempMax=tempMax+5;
+if(tempMax>limMaxDHT){
+tempMax=tempMin;
+}
+}else if(digitalRead(botonDes)){//Se lee el boton de decremento para deccrementar la temperatura maxima
+tempMax=tempMax-5;
+if(tempMax<tempMin){
+tempMax=limMaxDHT;
+}
+}
+lcd.setCursor(0,0);
+lcd.print("Temperatura Max:");
+lcd.setCursor(0,1);
+lcd.print(tempMax);
+lcd.print("*C");
+delay(100);
+}while(!digitalRead(botonMod));
+}else if(estado==3){//El estado 3 del sistema permite modificar la humedad minima de lectura
+do{
+lcd.clear();
+if(digitalRead(botonInc)){//Se lee el boton de incremento para incrementar la humedad minima
+humMin=humMin+5;
+if(humMin>humMax){
+humMin=limMinHumedad;
+}
+}else if(digitalRead(botonDes)){//Se lee el boton de decremento para decrementar la humedad minima
+humMin=humMin-5;
+if(humMin<limMinHumedad){
+humMin=humMax;
+}
+}
+lcd.setCursor(0,0);
+lcd.print("Humedad Min:");
+lcd.setCursor(0,1);
+lcd.print(humMin);
+lcd.print(" %");
+delay(100);
+}while(!digitalRead(botonMod));
+}else if(estado==4){//El estado 4 del sistema permite modificar la humedad maxima de lectura
+do{
+lcd.clear();
+if(digitalRead(botonInc)){//Se lee el boton de incremento para incrementar la humedad maxima
+humMax=humMax+5;
+if(humMax>limMaxHumedad){
+humMax=humMin;
+}
+}else if(digitalRead(botonDes)){//Se lee el boton de decremento para decrementar la humedad maxima
+humMax=humMax-5;
+if(humMax<humMin){
+humMax=limMaxHumedad;
+}
+}
+lcd.setCursor(0,0);
+lcd.print("Humedad Max:");
+lcd.setCursor(0,1);
+lcd.print(humMax);
+lcd.print(" %");
+delay(100);
+}while(!digitalRead(botonMod));
+}else if(estado==5){//El estado 5 permite activar o desactivar la alarma
+do{
+lcd.clear();
+lcd.setCursor(0,0);
+lcd.print("Alarma:");
+if(digitalRead(botonInc)){//Se lee el boton de incremento para alternar entre estado activo e inactivo de la alarma
+if(estAlarm==0){
+estAlarm=1;
+}else{
+estAlarm=0;
+}
+}else if(digitalRead(botonDes)){//Se lee el boton de decremento para alternar entre estado activo e inactivo de la alarma
+if(estAlarm==0){
+estAlarm=1;
+}else{
+estAlarm=0;
+}
+}
+lcd.setCursor(0,1);
+if(estAlarm==0){
+lcd.print("Inactivo");
+digitalWrite(outPIR, LOW);
+}else{
+lcd.print("Activo");
+}
+delay(300);
+}while(!digitalRead(botonMod));
+}else if(estado==6){//El estado 6 permite activar o desactivar el motor
+do{
+lcd.clear();
+lcd.setCursor(0,0);
+lcd.print("Motor:");
+if(digitalRead(botonInc)){//Se lee el boton de incremento para alternar entre estado activo e inactivo del motor
+if(estMotor==0){
+estMotor=1;
+}else{
+estMotor=0;
+}
+}else if(digitalRead(botonDes)){//Se lee el boton de decremento para alternar entre estado activo e inactivo del motor
+if(estMotor==0){
+estMotor=1;
+}else{
+estMotor=0;
+}
+}
+lcd.setCursor(0,1);
+if(estMotor==1){
+lcd.print("Activo");
+}else{
+lcd.print("Inactivo");
+}
+delay(300);
+}
+if(digitalRead(botonMod)){//si se presiona el pulsador de modificacion de estado se incrementara
+estado++;
+if(estado>6){//Cuando el estado supere el estado 5, el estado regresara al estado 0
+estado=0;
+}
+}
+
+// Esperamos un tiempo para repetir el loop
+delay(200);
+}
+}while(!digitalRead(botonMod));
